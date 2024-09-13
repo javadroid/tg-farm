@@ -17,6 +17,8 @@ COMBO_SEQUENCE_LENGTH = 4
 
 MAX_BOSS_LEVEL = 15
 
+DEFAULT_SPIN_COUNT = 10 
+
 logging.basicConfig(level=logging.INFO)
 
 
@@ -28,6 +30,7 @@ class MemefiGame:
         max_allowed_turbo_boosts: int = 0,
         max_allowed_recharge_boosts: int = 0,
         tap_bot: bool = False,
+        allow_spin: bool = False
     ):
         self.jwt_token = jwt_token
         self.url = "https://api-gw-tg.memefi.club/graphql"
@@ -41,6 +44,7 @@ class MemefiGame:
         self.max_allowed_turbo_boosts = max_allowed_turbo_boosts
         self.max_allowed_recharge_boosts = max_allowed_recharge_boosts
         self.tap_bot = tap_bot
+        self.allow_spin = allow_spin
 
         if self.max_allowed_turbo_boosts < 0:
             raise ValueError("Max allowed turbo boosts must be a positive integer")
@@ -198,9 +202,10 @@ class MemefiGame:
         return result[0]["data"]["telegramGameProcessTapsBatch"]
 
     async def spin_slot_machine(self, session: requests.AsyncSession, spin_count: int):
-        valid_spin_counts = [1, 2, 3, 5, 10, 50, 150]
-        if spin_count not in valid_spin_counts:
-            raise ValueError("Invalid spin count")
+        # FIXME: Remove this, Any spin number is valid 
+        # valid_spin_counts = [1, 2, 3, 5, 10, 50, 150]
+        # if spin_count not in valid_spin_counts:
+        #     raise ValueError("Invalid spin count")
         payload = [
             {
                 "operationName": "spinSlotMachine",
@@ -209,7 +214,8 @@ class MemefiGame:
             }
         ]
         result = await self._request(session, "POST", payload)
-        return result["data"]["slotMachineSpinV2"]
+        # print(result)
+        return result[0]["data"]["slotMachineSpinV2"]
 
     async def activate_boost(self, session: requests.AsyncSession, boost_type: str):
         booster_type = None
@@ -413,6 +419,18 @@ class MemefiGame:
 
     async def play_game(self, taps_count: int):
         async with requests.AsyncSession() as session:
+            # if spin allowed, spin
+            try:
+                if self.allow_spin:
+                    while True:
+                        logging.info(f"Spinning for {DEFAULT_SPIN_COUNT}")
+                        spin_res = await self.spin_slot_machine(session, DEFAULT_SPIN_COUNT)
+                        logging.info("Spin done!")
+                        logging.info(spin_res.get('spinResults'))
+                        await asyncio.sleep(2)
+            except Exception as e:
+                print("Error spinning: ", e)
+            return
             while True:
                 try:
                     # if tap bot enabled, run tap bot
@@ -510,34 +528,39 @@ class MemefiGame:
                 return
             logging.info("Tap bot session not ended, waiting...")
 
-# eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjp7Il9pZCI6IjY2MDdlMGU5MzUxOWQzZjgyODEyMDVmMyIsInVzZXJuYW1lIjoicmVhY3RqczMyIn0sInNlc3Npb25JZCI6IjY2ZDZkNDZkNWUzZmMzNDFkNjczY2YxNSIsInN1YiI6IjY2MDdlMGU5MzUxOWQzZjgyODEyMDVmMyIsImlhdCI6MTcyNTM1NTExNywiZXhwIjoxNzMzMTMxMTE3fQ.Jos0YEvHFHgMHIBxVQbDdaK8WUOeNbCXKJokLYVRNNM
+
 def main():
-    # jwt_token = input("Enter your JWT token: ").strip()
-    # jwt_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjp7Il9pZCI6IjY2NDkzZDhjZDQ2NjAwYjAzZGUxZDg5YSIsInVzZXJuYW1lIjoidHR0MzJzIn0sInNlc3Npb25JZCI6IjY2ZGViMzIwNDE5ZmI0ZmZkNmFkMWI1MiIsInN1YiI6IjY2NDkzZDhjZDQ2NjAwYjAzZGUxZDg5YSIsImlhdCI6MTcyNTg3MDg4MSwiZXhwIjoxNzMzNjQ2ODgxfQ.J7gWRYnHtMfUFn2pYVaMo5pclOJlFh1Nwu6FUs8NpTs"
-    jwt_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjp7Il9pZCI6IjY2MDdlMGU5MzUxOWQzZjgyODEyMDVmMyIsInVzZXJuYW1lIjoicmVhY3RqczMyIn0sInNlc3Npb25JZCI6IjY2ZDZkNDZkNWUzZmMzNDFkNjczY2YxNSIsInN1YiI6IjY2MDdlMGU5MzUxOWQzZjgyODEyMDVmMyIsImlhdCI6MTcyNTM1NTExNywiZXhwIjoxNzMzMTMxMTE3fQ.Jos0YEvHFHgMHIBxVQbDdaK8WUOeNbCXKJokLYVRNNM"
-    # if not jwt_token:
-    #     print("Invalid JWT token, please try again")
-    #     exit()
-    initial_nonce = 0
-    # (
-    #     input("Enter the initial nonce (or press Enter to use default): ").strip()
-    #     or None
-    # )
-    max_allowed_turbo_boosts = 20
-    # int(
-    #     input("Enter the maximum number of allowed turbo boosts: ").strip() or 0
-    # )
-    max_allowed_recharge_boosts = 0
-    # int(
-    #     input("Enter the maximum number of allowed recharge boosts: ").strip() or 0
-    # )
+    jwt_token = input("Enter your JWT token: ").strip()
+    if not jwt_token:
+        print("Invalid JWT token, please try again")
+        exit()
+    
+    # prompt fpor spin
+    allow_spin = False
+    allow_slot_spin = input("Do you want to spin (y/n): ").strip()
+    if allow_slot_spin.lower() == "y":
+        allow_spin = True
+    else:
+        allow_spin = False
+
+    
+    initial_nonce = (
+        input("Enter the initial nonce (or press Enter to use default): ").strip()
+        or None
+    )
+    max_allowed_turbo_boosts = int(
+        input("Enter the maximum number of allowed turbo boosts: ").strip() or 0
+    )
+    max_allowed_recharge_boosts = int(
+        input("Enter the maximum number of allowed recharge boosts: ").strip() or 0
+    )
 
     tap_bot = False
-    # allow_tap_bot = input("Do you want to allow tap bot? (y/n): ").strip()
-    # if allow_tap_bot.lower() == "y":
-    #     tap_bot = True
-    # else:
-    #     tap_bot = False
+    allow_tap_bot = input("Do you want to allow tap bot? (y/n): ").strip()
+    if allow_tap_bot.lower() == "y":
+        tap_bot = True
+    else:
+        tap_bot = False
 
     # brute_force_combo_sequences = False
     daily_combo_sequences = (
@@ -546,10 +569,9 @@ def main():
         .split()
     )
     if len(daily_combo_sequences) == 0:
-        combo_confirm = "n"
-        # input(
-        #     "Would you like to run a brute force combo sequence? (y/n): "
-        # ).strip()
+        combo_confirm = input(
+            "Would you like to run a brute force combo sequence? (y/n): "
+        ).strip()
         if combo_confirm.lower() == "y":
             daily_combo_sequences = True
         else:
@@ -571,6 +593,7 @@ def main():
         max_allowed_turbo_boosts,
         max_allowed_recharge_boosts,
         tap_bot,
+        allow_spin
     )
 
     if platform.system() == "Windows":
